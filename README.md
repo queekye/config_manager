@@ -16,7 +16,7 @@
 ## 安装
 
 ```bash
-pip install config-manager
+pip install modern-config-manager
 ```
 
 ## 快速开始
