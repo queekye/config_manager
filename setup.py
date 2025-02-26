@@ -8,7 +8,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Kang Chen",
     author_email="chenkangcs@foxmail.com",
-    url="https://github.com/yourusername/config-manager",
+    url="https://github.com/queekye/config_manager",
     packages=find_packages(include=['config_manager', 'config_manager.*']),
     install_requires=[
         'dataclasses;python_version<"3.7"',
