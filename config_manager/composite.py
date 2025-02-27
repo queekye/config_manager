@@ -22,7 +22,6 @@ class CompositeConfig(BaseConfig):
         """初始化组合配置类。
     
         Args:
-            name: 配置名称
             **configs: 子配置对象字典，键为配置类型
         """
         self._configs = configs

@@ -75,14 +75,37 @@ class TrainingConfig(BaseConfig):
 
 ### 配置继承和组合
 
-支持通过继承复用配置：
+支持通过继承和组合来复用和管理配置：
 
 ```python
+# 通过继承扩展配置
 @ConfigRegistry.register("model", "enhanced_mlp")
 @dataclass
 class EnhancedMLPConfig(MLPConfig):
     use_residual: bool = True
     num_layers: int = 3
+
+# 使用组合配置管理多个相关配置
+from config_manager import CompositeConfig
+
+@dataclass
+class ExperimentConfig(CompositeConfig):
+    model: MLPConfig
+    training: TrainingConfig
+    
+    def __post_init__(self):
+        # 可以在这里添加配置验证逻辑
+        if self.model.input_dim != 784:
+            raise ValueError("Input dimension must be 784 for MNIST dataset")
+
+# 创建组合配置
+config = ExperimentConfig(
+    model=MLPConfig(input_dim=784, output_dim=10),
+    training=TrainingConfig(batch_size=32, learning_rate=0.001)
+)
+
+# 保存完整配置
+config.save("experiment_config.yaml")
 ```
 
 ### 配置文件格式
@@ -107,6 +130,81 @@ training:
   learning_rate: 0.001
   epochs: 100
   output_dir: "./output"
+```
+
+### 参数验证和约束
+
+支持在配置类中添加参数验证和约束：
+
+```python
+from dataclasses import dataclass, field
+from typing import List, Optional
+from config_manager import ConfigRegistry, BaseConfig
+
+@ConfigRegistry.register("training", "advanced")
+@dataclass
+class AdvancedTrainingConfig(BaseConfig):
+    learning_rate: float = field(
+        default=0.001,
+        metadata={"help": "初始学习率", "range": [0.0001, 0.1]}
+    )
+    optimizer: str = field(
+        default="adam",
+        metadata={"choices": ["adam", "sgd", "rmsprop"]}
+    )
+    scheduler: Optional[str] = field(
+        default=None,
+        metadata={"choices": [None, "cosine", "step"]}
+    )
+    
+    def __post_init__(self):
+        super().__post_init__()
+        if self.learning_rate < 0.0001 or self.learning_rate > 0.1:
+            raise ValueError("Learning rate must be between 0.0001 and 0.1")
+```
+
+### 实际应用示例
+
+以下是一个完整的训练脚本示例，展示如何在实际项目中使用配置管理系统：
+
+```python
+from config_manager import ConfigRegistry, ConfigParser
+from torch import nn, optim
+
+def main():
+    # 解析命令行参数
+    parser = ConfigParser()
+    args = parser.parse_args()
+    
+    # 获取模型和训练配置
+    model_config = args.model
+    train_config = args.training
+    
+    # 构建模型
+    model = build_model(model_config)
+    
+    # 配置优化器
+    optimizer = getattr(optim, train_config.optimizer)(
+        model.parameters(),
+        lr=train_config.learning_rate
+    )
+    
+    # 配置学习率调度器
+    if train_config.scheduler:
+        scheduler = get_scheduler(optimizer, train_config)
+    
+    # 训练循环
+    for epoch in range(train_config.epochs):
+        train_epoch(model, optimizer, train_config)
+        if scheduler:
+            scheduler.step()
+        
+        # 保存检查点
+        if epoch % train_config.save_interval == 0:
+            save_checkpoint(model, optimizer, epoch, train_config.output_dir)
+
+if __name__ == "__main__":
+    main()
 ```
 
 ## API 文档
