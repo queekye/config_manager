@@ -257,7 +257,7 @@ python train.py params --type model --name mlp
 python train.py train --model_name mlp --training_name default --config config.yaml
 
 # 通过命令行参数覆盖配置
-python train.py train --model_name mlp --training_name default --params "learning_rate=0.01" "batch_size=32"
+python train.py train --model_name mlp --training_name default --params "learning_rate=0.01" "batch_size=16"
 
 # 指定输出目录
 python train.py train --model_name mlp --training_name default --output_dir "./output"
