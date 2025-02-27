@@ -30,7 +30,8 @@ from dataclasses import dataclass
 # 定义配置类
 @ConfigRegistry.register("model", "mlp")
 @dataclass
-class MLPConfig(BaseConfig):
+class MLPConfig:
+    name: str
     input_dim: int
     output_dim: int
     hidden_dims: list = [256, 128]
@@ -62,7 +63,7 @@ loaded_config = MLPConfig.load("config.yaml")
 ```python
 @ConfigRegistry.register("training", "default")
 @dataclass
-class TrainingConfig(BaseConfig):
+class TrainingConfig:
     # 字符串会自动转换为布尔值
     use_cuda: bool = True  # "true", "yes", "1" 都会转换为 True
     
@@ -88,15 +89,18 @@ class EnhancedMLPConfig(MLPConfig):
 # 使用组合配置管理多个相关配置
 from config_manager import CompositeConfig
 
-@dataclass
-class ExperimentConfig(CompositeConfig):
-    model: MLPConfig
-    training: TrainingConfig
-    
-    def __post_init__(self):
-        # 可以在这里添加配置验证逻辑
-        if self.model.input_dim != 784:
-            raise ValueError("Input dimension must be 784 for MNIST dataset")
+# 使用组合配置
+model_config = MLPConfig(name="mnist_model", input_dim=784, output_dim=10)
+training_config = TrainingConfig(batch_size=32, learning_rate=0.001)
+
+composite = CompositeConfig(
+    model=model_config,
+    training=training_config
+)
+
+# 访问组合配置
+assert composite.model.input_dim == 784
+assert composite.training.batch_size == 32
 
 # 创建组合配置
 config = ExperimentConfig(
@@ -143,24 +147,26 @@ from config_manager import ConfigRegistry, BaseConfig
 
 @ConfigRegistry.register("training", "advanced")
 @dataclass
-class AdvancedTrainingConfig(BaseConfig):
+class AdvancedTrainingConfig:
+    name: str
     learning_rate: float = field(
         default=0.001,
         metadata={"help": "初始学习率", "range": [0.0001, 0.1]}
+    )
+    batch_size: int = field(
+        default=32,
+        metadata={"help": "训练批次大小", "range": [1, 512]}
     )
     optimizer: str = field(
         default="adam",
         metadata={"choices": ["adam", "sgd", "rmsprop"]}
     )
-    scheduler: Optional[str] = field(
-        default=None,
-        metadata={"choices": [None, "cosine", "step"]}
-    )
     
     def __post_init__(self):
-        super().__post_init__()
         if self.learning_rate < 0.0001 or self.learning_rate > 0.1:
             raise ValueError("Learning rate must be between 0.0001 and 0.1")
+        if self.batch_size < 1 or self.batch_size > 512:
+            raise ValueError("Batch size must be between 1 and 512")
 ```
 
 ### 实际应用示例
@@ -211,56 +217,122 @@ if __name__ == "__main__":
 
 ### ConfigRegistry
 
-配置注册中心，用于管理不同类型的配置类。
+配置注册中心，用于管理不同类型的配置类。主要提供以下方法：
 
-- `register(config_type: str, name: str)`: 注册配置类的装饰器
-- `get_config(config_type: str, name: str)`: 获取指定类型和名称的配置类
-- `list_available_configs()`: 列出所有可用的配置类
-- `get_config_params(config_type: str, name: str)`: 获取指定配置类的参数说明
+- `register(config_type: str, name: str) -> Callable`
+  - 功能：注册配置类的装饰器
+  - 参数：
+    - config_type: 配置类型（如 "model", "training"）
+    - name: 配置名称
+  - 返回：装饰器函数
+  - 示例：
+    ```python
+    @ConfigRegistry.register("model", "resnet")
+    @dataclass
+    class ResNetConfig:
+        layers: int = 50
+        pretrained: bool = True
+    ```
 
-### BaseConfig
+- `get_config(config_type: str, name: str) -> Type[BaseConfig]`
+  - 功能：获取指定类型和名称的配置类
+  - 参数：
+    - config_type: 配置类型
+    - name: 配置名称
+  - 返回：配置类
+  - 异常：ConfigNotFoundError（配置不存在时）
 
-所有配置类的基类，提供基本功能。
+- `list_available_configs() -> Dict[str, List[str]]`
+  - 功能：列出所有可用的配置类
+  - 返回：字典，键为配置类型，值为该类型下的配置名称列表
 
-- `to_dict()`: 将配置对象转换为字典格式
-- `save(path: str)`: 将配置保存到文件（支持 .json, .yaml, .yml）
-- `load(path: str)`: 从文件加载配置
+- `get_config_params(config_type: str, name: str) -> Dict[str, Dict]`
+  - 功能：获取指定配置类的参数说明
+  - 参数：
+    - config_type: 配置类型
+    - name: 配置名称
+  - 返回：参数说明字典
+  - 异常：ConfigNotFoundError（配置不存在时）
 
 ### CompositeConfig
 
-组合配置类，用于封装和管理多个子配置。
+组合配置类，用于封装和管理多个子配置。主要提供以下方法：
 
-- `__init__(**configs)`: 初始化组合配置，支持传入多个子配置
-- `__getattr__(name: str)`: 通过属性访问子配置（如 `config.model`）
-- `to_dict()`: 将组合配置转换为字典，包含所有子配置信息
-- `save(path: str)`: 将组合配置保存到文件
+- `__init__(**configs)`
+  - 功能：初始化组合配置
+  - 参数：configs - 关键字参数，包含多个子配置实例
+  - 示例：
+    ```python
+    composite = CompositeConfig(
+        model=ModelConfig(type="resnet"),
+        training=TrainingConfig(epochs=100)
+    )
+    ```
 
-### 配置解析器
+- `__getattr__(name: str) -> BaseConfig`
+  - 功能：通过属性访问子配置
+  - 参数：name - 子配置名称
+  - 返回：子配置实例
+  - 异常：AttributeError（子配置不存在时）
 
-提供命令行参数解析和配置文件加载功能。
+- `to_dict() -> Dict`
+  - 功能：将组合配置转换为字典
+  - 返回：包含所有子配置信息的字典
 
-主要功能：
-- 支持命令行参数解析
-- 支持从JSON/YAML文件加载配置
-- 提供配置验证和参数分配
-- 支持查看可用配置和参数说明
+- `save(path: str) -> None`
+  - 功能：将组合配置保存到文件
+  - 参数：path - 保存路径（支持 .yaml 或 .json）
+  - 异常：IOError（文件操作失败时）
 
-命令行使用示例：
+
+### ConfigParser
+
+配置解析器，提供命令行参数解析和配置文件加载功能。主要提供以下方法：
+
+- `__init__(description: str = None)`
+  - 功能：初始化配置解析器
+  - 参数：description - 命令行工具描述
+
+- `add_config_type(config_type: str) -> None`
+  - 功能：添加配置类型
+  - 参数：config_type - 配置类型名称
+
+- `parse_args(args: List[str] = None) -> Namespace`
+  - 功能：解析命令行参数
+  - 参数：args - 命令行参数列表（可选）
+  - 返回：解析后的参数对象
+
+- `load_config(path: str) -> Dict`
+  - 功能：加载配置文件
+  - 参数：path - 配置文件路径
+  - 返回：配置字典
+  - 异常：ConfigFileError（文件格式错误）
+
+使用示例：
+```python
+# 初始化解析器
+parser = ConfigParser()
+
+# 解析参数
+args = parser.parse_args()
+
+# 获取特定配置
+model_config = config["model"]
+training_config = config["training"]
+```
+
+命令行参数支持：
 ```bash
-# 列出所有可用配置
-python train.py list
+# 训练命令
+python train.py train \
+    --model_name resnet \
+    --training_name default \
+    --config config.yaml \
+    --params "learning_rate=0.01" "batch_size=64"
 
-# 查看特定配置的参数说明
-python train.py params --type model --name mlp
-
-# 使用配置文件训练
-python train.py train --model_name mlp --training_name default --config config.yaml
-
-# 通过命令行参数覆盖配置
-python train.py train --model_name mlp --training_name default --params "learning_rate=0.01" "batch_size=16"
-
-# 指定输出目录
-python train.py train --model_name mlp --training_name default --output_dir "./output"
+# 查看配置信息
+python train.py list  # 列出所有配置
+python train.py params --type model --name resnet  # 查看特定配置参数
 ```
 
 ## 许可证

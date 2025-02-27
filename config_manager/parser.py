@@ -6,6 +6,7 @@ from typing import Tuple, Dict, Any
 
 from .registry import ConfigRegistry
 from .composite import CompositeConfig
+from .helper import ConfigHelper
 
 
 class ConfigParser:
@@ -42,7 +43,6 @@ class ConfigParser:
             self.train_parser.add_argument(
                 f"--{config_type}_name",
                 type=str,
-                required=True,
                 help=f"{config_type}配置名称",
             )
         self.train_parser.add_argument(
@@ -65,9 +65,6 @@ class ConfigParser:
         
         # 初始化配置
         self.configs = None
-        
-        # 在初始化时自动执行main方法
-        # self.configs = self._main()
 
     def __call__(self):
         """使ConfigParser实例可调用，返回解析后的配置"""
@@ -113,21 +110,12 @@ class ConfigParser:
         path = Path(config_path)
         if not path.exists():
             raise ValueError(f"配置文件不存在: {path}")
-            
-        if path.suffix == '.json':
-            with open(path, 'r', encoding='utf-8') as f:
-                try:
-                    config = json.load(f)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"JSON格式错误: {e}")
-        elif path.suffix in {'.yaml', '.yml'}:
-            with open(path, 'r', encoding='utf-8') as f:
-                try:
-                    config = yaml.safe_load(f)
-                except yaml.YAMLError as e:
-                    raise ValueError(f"YAML格式错误: {e}")
-        else:
-            raise ValueError(f"不支持的配置文件格式: {path.suffix}")
+        
+        # 使用ConfigHelper加载配置文件
+        try:
+            config = ConfigHelper.load(dict, config_path)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"配置文件加载失败: {str(e)}")
         
         if not isinstance(config, dict):
             raise ValueError("配置文件必须是一个字典")
@@ -148,9 +136,13 @@ class ConfigParser:
                     config_data = config.get(f"{base_type}", {})
                     if not isinstance(config_data, dict):
                         raise ValueError(f"{base_type}必须是一个字典")
-                    if 'name' not in config_data:
-                        config_data['name'] = config[config_type]
-                    configs[base_type] = config_cls(**config_data)
+                    
+                    configs[base_type] = ConfigHelper.post_init(config_cls(**config_data))
+
+                    # 如果配置数据中没有name字段，则使用配置名称
+                    # 检查配置对象是否有name属性，如果没有或者name为空则使用配置名称
+                    if not hasattr(configs[base_type], 'name') or not configs[base_type].name:
+                        configs[base_type].name = config[config_type]
         
         return CompositeConfig(**configs)
     
@@ -206,7 +198,7 @@ class ConfigParser:
                     for config_type, name in config_types.items():
                         config_cls = ConfigRegistry.get_config(config_type, name)
                         if config_cls:
-                            configs[config_type] = config_cls(**assigned_params[config_type])
+                            configs[config_type] = ConfigHelper.post_init(config_cls(**assigned_params[config_type]))
                     
                     # 设置输出目录
                     if "training" in configs and args.output_dir:

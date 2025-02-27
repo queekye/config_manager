@@ -1,6 +1,8 @@
-from typing import Dict, Type, Optional, Set, List
+from typing import Dict, Type, Optional, Set, List, Any
 import dataclasses
-from .base import BaseConfig
+import json
+import yaml
+from pathlib import Path
 
 
 class ConfigRegistry:
@@ -10,18 +12,18 @@ class ConfigRegistry:
     并通过配置类型和名称进行索引。同时提供了参数冲突检查、配置验证等功能。
 
     属性:
-        _configs (Dict[str, Dict[str, Type[BaseConfig]]]): 存储所有注册的配置类
+        _configs (Dict[str, Dict[str, Type]]): 存储所有注册的配置类
 
     示例:
         >>> @ConfigRegistry.register("model", "bert")
-        >>> class BertConfig(BaseConfig):
+        >>> @dataclass
+        >>> class BertConfig:
         >>>     hidden_size: int = 768
         >>>     num_layers: int = 12
     """
     
-    _configs: Dict[str, Dict[str, Type[BaseConfig]]] = {}
-    export_params: Set[str] = set()
-
+    _configs: Dict[str, Dict[str, Type]] = {}
+    export_params: Set[str] = set(['name'])
     
     @classmethod
     def register(cls, config_type: str, name: str):
@@ -38,17 +40,16 @@ class ConfigRegistry:
             callable: 装饰器函数
 
         Raises:
-            TypeError: 当注册的类不是 BaseConfig 的子类时抛出
             ValueError: 当存在参数冲突时抛出，或当尝试重复注册相同类型和名称的配置类时抛出
 
         示例:
             >>> @ConfigRegistry.register("model", "bert")
-            >>> class BertConfig(BaseConfig):
+            >>> class BertConfig:
             >>>     hidden_size: int = 768
         """
-        def wrapper(config_cls: Type[BaseConfig]) -> Type[BaseConfig]:
-            if not issubclass(config_cls, BaseConfig):
-                raise TypeError(f"配置类必须继承自 BaseConfig，得到的是 {config_cls}")
+        def wrapper(config_cls: Type) -> Type:
+            if not hasattr(config_cls, "__dataclass_fields__"):
+                raise TypeError(f"配置类必须使用@dataclass装饰器定义，得到的是 {config_cls}")
             
             # 检查是否存在重复注册
             if config_type in cls._configs and name in cls._configs[config_type]:
@@ -62,11 +63,13 @@ class ConfigRegistry:
                 cls._configs[config_type] = {}
             
             cls._configs[config_type][name] = config_cls
+            
+            config_cls.name = name
             return config_cls
         return wrapper
     
     @classmethod
-    def get_config(cls, config_type: str, name: str) -> Optional[Type[BaseConfig]]:
+    def get_config(cls, config_type: str, name: str) -> Optional[Type]:
         """获取指定类型和名称的配置类。
 
         Args:
@@ -74,7 +77,7 @@ class ConfigRegistry:
             name (str): 配置名称
 
         Returns:
-            Optional[Type[BaseConfig]]: 配置类，如果不存在则返回 None
+            Optional[Type[]]: 配置类，如果不存在则返回 None
 
         示例:
             >>> config_cls = ConfigRegistry.get_config("model", "bert")
@@ -149,7 +152,7 @@ class ConfigRegistry:
                         for config_type, config_cls in config_classes.items()}
         
         # 分配参数
-        assigned_params = {config_type: {'name': name} for config_type, name in config_types.items()}
+        assigned_params = {config_type: {} for config_type in config_types}
         unassigned_params = set()
         
         for param_name, param_value in params.items():
@@ -166,9 +169,8 @@ class ConfigRegistry:
         missing_params = []
         for config_type, config_cls in config_classes.items():
             for param_name in cls._get_required_params(config_cls):
-                if param_name not in assigned_params[config_type]:
+                if param_name not in assigned_params[config_type] and param_name not in cls.export_params:
                     missing_params.append(f"{config_type}.{param_name}")
-        
         if missing_params or unassigned_params:
             error_msg = []
             if missing_params:
@@ -184,7 +186,7 @@ class ConfigRegistry:
         """检查参数冲突。
         
         检查规则：
-        1. 不同类型的配置类之间不能有重名参数，除了从BaseConfig继承的参数
+        1. 不同类型的配置类之间不能有重名参数
         2. 同类型的配置类之间允许有重名参数
     
         Args:
@@ -196,7 +198,7 @@ class ConfigRegistry:
             ValueError: 当存在参数冲突时抛出
         """
         new_params = set(cls._get_param_names(config_cls))
-        base_params = set(cls._get_param_names(BaseConfig))  # 获取基类参数
+        base_params = set(['name'])  # 不再需要获取基类参数
         
         # 检查与其他类型配置的参数冲突
         for other_type, other_configs in cls._configs.items():
@@ -230,11 +232,8 @@ class ConfigRegistry:
         Returns:
             Set[str]: 必需参数名称集合
         """
-        # 排除基类属性
-        base_fields = set(BaseConfig.__dataclass_fields__.keys())
         return {name for name, field in cls.__dataclass_fields__.items() 
-                if field.default == field.default_factory == dataclasses.MISSING
-                and name not in base_fields}
+                if field.default == field.default_factory == dataclasses.MISSING}
     
     @staticmethod
     def _get_param_docs(cls: Type) -> Dict[str, str]:

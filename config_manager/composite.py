@@ -1,14 +1,17 @@
 from dataclasses import dataclass
 from typing import Dict, Any
+from pathlib import Path
+import json
+import yaml
+from .helper import ConfigHelper
 
-from .base import BaseConfig
 
 @dataclass
-class CompositeConfig(BaseConfig):
+class CompositeConfig:
     
     """组合配置类，用于封装多个子配置。
 
-    该类继承自BaseConfig，提供了通过属性访问子配置的功能，
+    提供了通过属性访问子配置的功能，
     并为每个子配置类型添加对应的type属性。
 
     示例:
@@ -53,11 +56,10 @@ class CompositeConfig(BaseConfig):
         Returns:
             Dict[str, Any]: 包含所有配置参数的字典
         """
-        result = super().to_dict()
+        result = {}
         # 添加子配置
         for config_type, config in self._configs.items():
-            if hasattr(config, "to_dict"):
-                result[config_type] = config.to_dict()
+            result[config_type] = ConfigHelper.to_dict(config)
             if hasattr(config, "name"):
                 result[f"{config_type}_name"] = config.name
         
@@ -98,3 +100,16 @@ class CompositeConfig(BaseConfig):
     def __repr__(self):
         """重写__repr__方法，使其返回配置的字典形式的字符串表示"""
         return self.__str__()
+    
+    def save(self, path: str) -> None:
+        """将配置保存到文件。
+
+        支持保存为 JSON 或 YAML 格式，根据文件扩展名自动选择格式。
+
+        Args:
+            path (str): 保存配置的文件路径，支持 .json、.yaml 或 .yml 扩展名
+
+        Raises:
+            ValueError: 当文件格式不支持时抛出
+        """
+        ConfigHelper.save(self, path)
