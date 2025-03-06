@@ -7,6 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: pypi
     # 添加权限设置，这对OIDC身份验证是必需的
     permissions:
       id-token: write # 用于OIDC身份验证
