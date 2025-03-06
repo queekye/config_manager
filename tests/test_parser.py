@@ -4,11 +4,12 @@ import json
 import yaml
 from dataclasses import dataclass, field
 from config_manager import ConfigRegistry, ConfigParser
+import pytest
 
 
 @ConfigRegistry.register("model", "test_model")
 @dataclass
-class TestModelConfig:
+class ModelConfig:
     input_dim: int
     output_dim: int
     hidden_dims: list = field(default_factory=lambda: [256, 128])
@@ -16,7 +17,7 @@ class TestModelConfig:
 
 @ConfigRegistry.register("training", "test_training")
 @dataclass
-class TestTrainingConfig:
+class TrainingConfig:
     learning_rate: float
     batch_size: int
     epochs: int = 10

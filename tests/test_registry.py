@@ -2,19 +2,22 @@ import unittest
 from dataclasses import dataclass, field
 from typing import List
 from config_manager import ConfigRegistry
+import pytest
+
 
 # 测试用的配置类
 @ConfigRegistry.register("model", "test_registry_model")
 @dataclass
-class TestModelConfig:
+class ModelConfig:
     input_dim: int
     output_dim: int
     hidden_dims: List[int] = field(default_factory=lambda: [256, 128])
     name: str = "test_model"
 
+
 @ConfigRegistry.register("training", "test_registry_training")
 @dataclass
-class TestTrainingConfig:
+class TrainingConfig:
     learning_rate: float
     batch_size: int
     epochs: int = 10
@@ -26,7 +29,7 @@ class TestConfigRegistry(unittest.TestCase):
         # 测试获取已注册的配置类
         model_config = ConfigRegistry.get_config("model", "test_registry_model")
         self.assertIsNotNone(model_config)
-        self.assertEqual(model_config.__name__, "TestModelConfig")
+        self.assertEqual(model_config.__name__, "ModelConfig")
         
         # 测试获取不存在的配置类
         invalid_config = ConfigRegistry.get_config("invalid", "invalid")
@@ -92,7 +95,7 @@ class TestConfigRegistry(unittest.TestCase):
             @ConfigRegistry.register("optimizer", "test_optimizer")
             @dataclass
             class ConflictConfig:
-                # input_dim 与 TestModelConfig 冲突
+                # input_dim 与 ModelConfig 冲突
                 input_dim: int
                 learning_rate: float
 

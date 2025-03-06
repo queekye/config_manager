@@ -1,8 +1,9 @@
-name: 发布Python包到PyPI
+name: 发布Python包到TestPyPI
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - "v*-beta*" # 匹配测试版本标签，例如v0.3.0-beta1
 
 jobs:
   deploy:
@@ -29,9 +30,7 @@ jobs:
         run: |
           python -m build
 
-      - name: 使用Trusted Publisher发布到PyPI
+      - name: 使用Trusted Publisher发布到TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        # 不再需要凭据，因为我们使用Trusted Publisher
-        # 如果需要发布到TestPyPI，可以取消注释下面的行
-        # with:
-        #   repository-url: https://test.pypi.org/legacy/
+        with:
+          repository-url: https://test.pypi.org/legacy/

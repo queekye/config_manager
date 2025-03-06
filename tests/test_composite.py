@@ -9,6 +9,7 @@ class ModelConfig:
     input_dim: int
     output_dim: int
 
+
 @ConfigRegistry.register("training", "test")
 @dataclass
 class TrainingConfig:
