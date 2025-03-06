@@ -289,26 +289,5 @@ class ConfigRegistry:
         Returns:
             Dict[str, str]: 参数名称及其说明的字典
         """
-        param_docs = {}
-        if cls.__doc__:
-            lines = cls.__doc__.split("\n")
-            in_args = False
-            current_param = None
-            for line in lines:
-                line = line.strip()
-                if line.lower().startswith("args:"):
-                    in_args = True
-                    continue
-                if in_args:
-                    if line.startswith(("    ", "\t")):
-                        parts = line.lstrip().split(":", 1)
-                        if len(parts) == 2:
-                            current_param = parts[0].strip()
-                            param_docs[current_param] = parts[1].strip()
-                        elif current_param and line:
-                            # 继续上一个参数的说明
-                            param_docs[current_param] += " " + line.lstrip()
-                    else:
-                        # 离开Args部分
-                        in_args = False
-        return param_docs
+        return {name: field.metadata.get('help', '') 
+        for name, field in cls.__dataclass_fields__.items()}

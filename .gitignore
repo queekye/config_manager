@@ -8,6 +8,7 @@ test.py
 dist/
 build/
 *.egg-info/
+.pypirc
 
 # Virtual Environment
 venv/
@@ -20,15 +21,10 @@ env/
 *.swp
 
 # Test
-tests/
 .pytest_cache/
 
 # Config
 config/
-*.yaml
-*.yml
-*.json
-!config_example.yaml
 
 # History
 .history/
