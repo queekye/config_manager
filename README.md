@@ -1,22 +1,28 @@
 # Config Manager
 
-一个灵活的配置注册和管理系统，用于简化深度学习项目中的配置管理。本项目提供了一个统一的配置注册机制，支持多种类型配置的管理，并具有参数验证、类型转换等功能。
+一个灵活的配置注册和管理系统，用于简化项目中的配置管理。本项目提供了一个统一的配置注册机制，支持多种类型配置的管理，并具有参数验证、类型转换等功能。
 
 ## 特性
 
 - 支持多种类型配置的注册和管理
 - 提供参数类型自动转换功能（支持基本类型、列表和字典）
 - 内置参数冲突检测，避免不同类型配置间的参数名冲突
-- 支持配置继承和组合，方便复用配置
+- 支持配置组合，方便统一管理多个配置
 - 提供命令行参数解析功能，支持从命令行覆盖配置
 - 支持 JSON 和 YAML 格式配置文件的读写
 - 自动进行参数类型验证和转换
-- 支持配置参数的文档注释
+- 支持配置参数的文档注释提取
 
 ## 安装
 
 ```bash
-pip install modern-config-manager
+# 从源码安装
+git clone https://github.com/yourusername/config_manager.git
+cd config_manager
+pip install -e .
+
+# 或者直接安装
+pip install config-manager
 ```
 
 ## 快速开始
@@ -24,16 +30,26 @@ pip install modern-config-manager
 ### 基本使用
 
 ```python
-from config_manager import ConfigRegistry, BaseConfig
+from config_manager import ConfigRegistry
 from dataclasses import dataclass
 
 # 定义配置类
 @ConfigRegistry.register("model", "mlp")
 @dataclass
 class MLPConfig:
-    name: str
-    input_dim: int
-    output_dim: int
+    """MLP模型配置类
+    
+    Args:
+        input_dim: 输入维度
+        output_dim: 输出维度
+        hidden_dims: 隐藏层维度列表
+        dropout_rate: Dropout比率
+        activation: 激活函数
+        use_batch_norm: 是否使用批归一化
+    """
+    name: str = "mlp"
+    input_dim: int = 10
+    output_dim: int = 2
     hidden_dims: list = [256, 128]
     dropout_rate: float = 0.1
     activation: str = "relu"
@@ -44,16 +60,13 @@ config_cls = ConfigRegistry.get_config("model", "mlp")
 
 # 创建配置实例
 config = config_cls(
-    name="mlp_model",
-    input_dim=10,
-    output_dim=2
+    input_dim=784,
+    output_dim=10
 )
 
-# 保存配置
-config.save("config.yaml")
-
-# 加载配置
-loaded_config = MLPConfig.load("config.yaml")
+# 查看配置参数说明
+params = ConfigRegistry.get_config_params("model", "mlp")
+print(params)
 ```
 
 ### 参数类型转换
@@ -61,55 +74,66 @@ loaded_config = MLPConfig.load("config.yaml")
 系统支持多种类型的自动转换：
 
 ```python
+from config_manager import ConfigRegistry, ConfigHelper
+from dataclasses import dataclass
+
 @ConfigRegistry.register("training", "default")
 @dataclass
 class TrainingConfig:
-    # 字符串会自动转换为布尔值
-    use_cuda: bool = True  # "true", "yes", "1" 都会转换为 True
+    """训练配置类
     
-    # 字符串会自动转换为列表
-    layer_sizes: list = [512, 256]  # "512,256" 会转换为 [512, 256]
-    
-    # 字符串会自动转换为字典
-    optimizer_params: dict = {"lr": 0.001}  # '{"lr": 0.001}' 会被正确解析
+    Args:
+        batch_size: 批次大小
+        learning_rate: 学习率
+        use_cuda: 是否使用GPU
+        layer_sizes: 网络层大小列表
+        optimizer_params: 优化器参数
+    """
+    name: str = "default"
+    batch_size: int = 32
+    learning_rate: float = 0.001
+    use_cuda: bool = True  # 字符串 "true", "yes", "1" 会自动转换为 True
+    layer_sizes: list = [512, 256]  # 字符串 "512,256" 会自动转换为 [512, 256]
+    optimizer_params: dict = {"lr": 0.001}  # 字符串 '{"lr": 0.001}' 会被正确解析
+
+# 创建配置并进行类型转换
+config = TrainingConfig(
+    batch_size="64",  # 字符串会自动转换为整数
+    use_cuda="yes",   # 会自动转换为 True
+    layer_sizes="128,64,32"  # 会自动转换为列表 [128, 64, 32]
+)
+
+# 执行类型转换
+config = ConfigHelper.post_init(config)
+print(config.batch_size, type(config.batch_size))  # 64 <class 'int'>
+print(config.use_cuda, type(config.use_cuda))      # True <class 'bool'>
+print(config.layer_sizes, type(config.layer_sizes))  # [128, 64, 32] <class 'list'>
 ```
 
-### 配置继承和组合
+### 配置组合
 
-支持通过继承和组合来复用和管理配置：
+支持通过组合来管理多个配置：
 
 ```python
-# 通过继承扩展配置
-@ConfigRegistry.register("model", "enhanced_mlp")
-@dataclass
-class EnhancedMLPConfig(MLPConfig):
-    use_residual: bool = True
-    num_layers: int = 3
+from config_manager import CompositeConfig, ConfigHelper
 
-# 使用组合配置管理多个相关配置
-from config_manager import CompositeConfig
-
-# 使用组合配置
-model_config = MLPConfig(name="mnist_model", input_dim=784, output_dim=10)
+# 创建各个配置
+model_config = MLPConfig(input_dim=784, output_dim=10)
 training_config = TrainingConfig(batch_size=32, learning_rate=0.001)
 
+# 使用组合配置
 composite = CompositeConfig(
     model=model_config,
     training=training_config
 )
 
 # 访问组合配置
-assert composite.model.input_dim == 784
-assert composite.training.batch_size == 32
-
-# 创建组合配置
-config = ExperimentConfig(
-    model=MLPConfig(input_dim=784, output_dim=10),
-    training=TrainingConfig(batch_size=32, learning_rate=0.001)
-)
+print(composite.model.input_dim)  # 784
+print(composite.training.batch_size)  # 32
+print(composite.model_name)  # "mlp"
 
 # 保存完整配置
-config.save("experiment_config.yaml")
+composite.save("experiment_config.json")  # 或 .yaml
 ```
 
 ### 配置文件格式
@@ -136,203 +160,158 @@ training:
   output_dir: "./output"
 ```
 
-### 参数验证和约束
+### 命令行解析
 
-支持在配置类中添加参数验证和约束：
-
-```python
-from dataclasses import dataclass, field
-from typing import List, Optional
-from config_manager import ConfigRegistry, BaseConfig
-
-@ConfigRegistry.register("training", "advanced")
-@dataclass
-class AdvancedTrainingConfig:
-    name: str
-    learning_rate: float = field(
-        default=0.001,
-        metadata={"help": "初始学习率", "range": [0.0001, 0.1]}
-    )
-    batch_size: int = field(
-        default=32,
-        metadata={"help": "训练批次大小", "range": [1, 512]}
-    )
-    optimizer: str = field(
-        default="adam",
-        metadata={"choices": ["adam", "sgd", "rmsprop"]}
-    )
-    
-    def __post_init__(self):
-        if self.learning_rate < 0.0001 or self.learning_rate > 0.1:
-            raise ValueError("Learning rate must be between 0.0001 and 0.1")
-        if self.batch_size < 1 or self.batch_size > 512:
-            raise ValueError("Batch size must be between 1 and 512")
-```
-
-### 实际应用示例
-
-以下是一个完整的训练脚本示例，展示如何在实际项目中使用配置管理系统：
+支持通过命令行解析配置：
 
 ```python
-from config_manager import ConfigRegistry, ConfigParser
-from torch import nn, optim
+from config_manager import ConfigParser
 
-def main():
-    # 解析命令行参数
-    parser = ConfigParser()
-    args = parser.parse_args()
-    
+# 初始化解析器
+parser = ConfigParser()
+
+# 解析命令行参数
+configs = parser.parse_args()
+
+# 如果是训练命令，获取配置
+if configs is None:
+    return
+
+if hasattr(configs, "model") and hasattr(configs, "training"):
     # 获取模型和训练配置
-    model_config = args.model
-    train_config = args.training
+    model_config = configs.model
+    train_config = configs.training
     
-    # 构建模型
-    model = build_model(model_config)
+    print(f"模型配置: {model_config}")
+    print(f"训练配置: {train_config}")
     
-    # 配置优化器
-    optimizer = getattr(optim, train_config.optimizer)(
-        model.parameters(),
-        lr=train_config.learning_rate
-    )
-    
-    # 配置学习率调度器
-    if train_config.scheduler:
-        scheduler = get_scheduler(optimizer, train_config)
-    
-    # 训练循环
-    for epoch in range(train_config.epochs):
-        train_epoch(model, optimizer, train_config)
-        if scheduler:
-            scheduler.step()
-        
-        # 保存检查点
-        if epoch % train_config.save_interval == 0:
-            save_checkpoint(model, optimizer, epoch, train_config.output_dir)
+    # 这里可以根据配置构建模型和执行训练
+    # ...
 
 if __name__ == "__main__":
     main()
+```
+
+命令行使用示例：
+
+```bash
+# 列出所有可用配置
+python train.py list
+
+# 查看特定配置的参数说明
+python train.py params --type model --name mlp
+
+# 从配置文件加载并执行训练
+python train.py train --config config.yaml
+
+# 从命令行参数创建配置并执行训练
+python train.py train --model_name mlp --training_name default --params "hidden_dims=[1024,512]" "batch_size=64"
 ```
 
 ## API 文档
 
 ### ConfigRegistry
 
-配置注册中心，用于管理不同类型的配置类。主要提供以下方法：
+配置注册中心，用于管理不同类型的配置类。
 
-- `register(config_type: str, name: str) -> Callable`
-  - 功能：注册配置类的装饰器
-  - 参数：
-    - config_type: 配置类型（如 "model", "training"）
-    - name: 配置名称
-  - 返回：装饰器函数
-  - 示例：
-    ```python
-    @ConfigRegistry.register("model", "resnet")
-    @dataclass
-    class ResNetConfig:
-        layers: int = 50
-        pretrained: bool = True
-    ```
-
-- `get_config(config_type: str, name: str) -> Type[BaseConfig]`
-  - 功能：获取指定类型和名称的配置类
-  - 参数：
-    - config_type: 配置类型
-    - name: 配置名称
-  - 返回：配置类
-  - 异常：ConfigNotFoundError（配置不存在时）
-
-- `list_available_configs() -> Dict[str, List[str]]`
-  - 功能：列出所有可用的配置类
-  - 返回：字典，键为配置类型，值为该类型下的配置名称列表
-
-- `get_config_params(config_type: str, name: str) -> Dict[str, Dict]`
-  - 功能：获取指定配置类的参数说明
-  - 参数：
-    - config_type: 配置类型
-    - name: 配置名称
-  - 返回：参数说明字典
-  - 异常：ConfigNotFoundError（配置不存在时）
-
-### CompositeConfig
-
-组合配置类，用于封装和管理多个子配置。主要提供以下方法：
-
-- `__init__(**configs)`
-  - 功能：初始化组合配置
-  - 参数：configs - 关键字参数，包含多个子配置实例
-  - 示例：
-    ```python
-    composite = CompositeConfig(
-        model=ModelConfig(type="resnet"),
-        training=TrainingConfig(epochs=100)
-    )
-    ```
-
-- `__getattr__(name: str) -> BaseConfig`
-  - 功能：通过属性访问子配置
-  - 参数：name - 子配置名称
-  - 返回：子配置实例
-  - 异常：AttributeError（子配置不存在时）
-
-- `to_dict() -> Dict`
-  - 功能：将组合配置转换为字典
-  - 返回：包含所有子配置信息的字典
-
-- `save(path: str) -> None`
-  - 功能：将组合配置保存到文件
-  - 参数：path - 保存路径（支持 .yaml 或 .json）
-  - 异常：IOError（文件操作失败时）
-
+主要方法：
+- `register(config_type, name)`: 注册配置类的装饰器
+- `get_config(config_type, name)`: 获取指定类型和名称的配置类
+- `list_available_configs()`: 列出所有可用的配置类
+- `get_config_params(config_type, name)`: 获取指定配置类的参数说明
+- `validate_and_assign_params(config_types, params, valid_missing)`: 验证并分配参数到相应的配置类
 
 ### ConfigParser
 
-配置解析器，提供命令行参数解析和配置文件加载功能。主要提供以下方法：
+配置解析器，用于从命令行参数或配置文件解析配置。
 
-- `__init__(description: str = None)`
-  - 功能：初始化配置解析器
-  - 参数：description - 命令行工具描述
+主要方法：
+- `parse_args(args)`: 解析命令行参数
+- `load_config(config_path)`: 从文件加载配置
+- `parse_extra_params(params_list)`: 解析额外的参数列表
 
-- `add_config_type(config_type: str) -> None`
-  - 功能：添加配置类型
-  - 参数：config_type - 配置类型名称
+### ConfigHelper
 
-- `parse_args(args: List[str] = None) -> Namespace`
-  - 功能：解析命令行参数
-  - 参数：args - 命令行参数列表（可选）
-  - 返回：解析后的参数对象
+配置辅助工具，提供配置对象的序列化、反序列化和类型转换等功能。
 
-- `load_config(path: str) -> Dict`
-  - 功能：加载配置文件
-  - 参数：path - 配置文件路径
-  - 返回：配置字典
-  - 异常：ConfigFileError（文件格式错误）
+主要方法：
+- `to_dict(config_obj)`: 将配置对象转换为字典格式
+- `save(config_obj, path)`: 将配置保存到文件
+- `load(config_cls, path)`: 从文件加载配置
+- `post_init(config_obj)`: 配置对象初始化后的处理函数，执行参数的自动类型转换和验证
 
-使用示例：
+### CompositeConfig
+
+组合配置类，用于封装多个子配置，提供统一的访问接口。
+
+主要方法：
+- `__init__(**configs)`: 初始化组合配置类
+- `__getattr__(name)`: 通过属性访问子配置
+- `to_dict()`: 将配置对象转换为字典格式
+- `save(path)`: 将配置保存到文件
+
+## 实际应用示例
+
+以下是一个完整的训练脚本示例，展示如何在实际项目中使用配置管理系统：
+
 ```python
-# 初始化解析器
-parser = ConfigParser()
+from config_manager import ConfigRegistry, ConfigParser
+from dataclasses import dataclass
 
-# 解析参数
-args = parser.parse_args()
+# 定义配置类
+@ConfigRegistry.register("model", "cnn")
+@dataclass
+class CNNConfig:
+    """CNN模型配置
+    
+    Args:
+        in_channels: 输入通道数
+        num_classes: 类别数量
+        kernel_size: 卷积核大小
+    """
+    name: str = "cnn"
+    in_channels: int = 3
+    num_classes: int = 10
+    kernel_size: int = 3
 
-# 获取特定配置
-model_config = config["model"]
-training_config = config["training"]
-```
+@ConfigRegistry.register("training", "default")
+@dataclass
+class TrainingConfig:
+    """训练配置
+    
+    Args:
+        batch_size: 批次大小
+        learning_rate: 学习率
+        epochs: 训练轮数
+        output_dir: 输出目录
+    """
+    name: str = "default"
+    batch_size: int = 32
+    learning_rate: float = 0.001
+    epochs: int = 10
+    output_dir: str = "./output"
 
-命令行参数支持：
-```bash
-# 训练命令
-python train.py train \
-    --model_name resnet \
-    --training_name default \
-    --config config.yaml \
-    --params "learning_rate=0.01" "batch_size=64"
+def main():
+    # 解析命令行参数
+    parser = ConfigParser()
+    configs = parser.parse_args()
+    
+    if configs is None:
+        return
+    
+    if hasattr(configs, "model") and hasattr(configs, "training"):
+        # 获取模型和训练配置
+        model_config = configs.model
+        train_config = configs.training
+        
+        print(f"模型配置: {model_config}")
+        print(f"训练配置: {train_config}")
+        
+        # 这里可以根据配置构建模型和执行训练
+        # ...
 
-# 查看配置信息
-python train.py list  # 列出所有配置
-python train.py params --type model --name resnet  # 查看特定配置参数
+if __name__ == "__main__":
+    main()
 ```
 
 ## 许可证
