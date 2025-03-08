@@ -44,14 +44,6 @@ class TestConfigParser(unittest.TestCase):
         self.assertIn("test_model", configs["model"])
         self.assertIn("test_training", configs["training"])
 
-        # 打印配置列表，方便观察
-        print("\n=== Available Configurations ===")
-        for config_type, names in configs.items():
-            print(f"{config_type}:")
-            for name in names:
-                print(f"  - {name}")
-        print("============================\n")
-
     def test_params_command(self):
         """测试params命令，验证是否能正确显示配置参数说明"""
         print("\n=== Parameters for test_model ===")
