@@ -228,9 +228,9 @@ class ConfigParser:
 
         if args.command == "list":
             # 列出可用的配置类
-            configs = ConfigRegistry.list_available_configs()
+            all_configs = ConfigRegistry.list_available_configs()
             print("\n可用的配置类:")
-            for config_type, names in configs.items():
+            for config_type, names in all_configs.items():
                 print(f"\n{config_type.title()}配置类:")
                 for name in names:
                     print(f"  - {name}")
