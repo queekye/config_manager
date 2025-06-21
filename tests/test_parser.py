@@ -204,6 +204,91 @@ class TestConfigParser(unittest.TestCase):
         self.assertEqual(saved_config["training"]["learning_rate"], 0.01)
         self.assertEqual(saved_config["training"]["epochs"], 20)
 
+    def test_create_configs_from_params_directly(self):
+        """直接测试create_configs_from_params静态方法"""
+        config_types = {
+            "model": "test_model",
+            "training": "test_training"
+        }
+        config_params = {
+            "model": {"input_dim": 20, "output_dim": 5},
+            "training": {"learning_rate": 0.002, "batch_size": 64}
+        }
+        
+        # 调用静态方法
+        configs = ConfigParser.create_configs_from_params(config_types, config_params)
+        
+        # 验证返回的是CompositeConfig对象
+        self.assertIsNotNone(configs)
+        self.assertTrue(hasattr(configs, "model"))
+        self.assertTrue(hasattr(configs, "training"))
+        
+        # 验证参数值
+        self.assertEqual(configs.model.input_dim, 20)
+        self.assertEqual(configs.model.output_dim, 5)
+        self.assertEqual(configs.training.learning_rate, 0.002)
+        self.assertEqual(configs.training.batch_size, 64)
+        
+        # 验证默认值
+        self.assertEqual(configs.model.hidden_dims, [256, 128])
+        self.assertEqual(configs.training.epochs, 10)
+    
+    def test_config_file_missing_params(self):
+        """测试配置文件缺少必需参数的情况"""
+        # 创建缺少必需参数的配置文件
+        config_data = {
+            "model_name": "test_model",
+            "model": {"input_dim": 10},  # 缺少 output_dim
+            "training_name": "test_training",
+            "training": {"learning_rate": 0.001},  # 缺少 batch_size
+        }
+        with open(self.test_config_path, "w") as f:
+            yaml.dump(config_data, f)
+        
+        # 应该打印错误信息并返回None
+        args = self.parser.parse_args(["train", "--config", str(self.test_config_path)])
+        self.assertIsNone(args)
+    
+    def test_config_file_with_empty_params_section(self):
+        """测试配置文件中参数部分为空的情况"""
+        config_data = {
+            "model_name": "test_model",
+            "training_name": "test_training",
+            # 没有 model 和 training 参数部分
+        }
+        with open(self.test_config_path, "w") as f:
+            yaml.dump(config_data, f)
+        
+        # 应该因为缺少必需参数而失败
+        args = self.parser.parse_args(["train", "--config", str(self.test_config_path)])
+        self.assertIsNone(args)
+    
+    def test_config_file_with_extra_params_fix_missing(self):
+        """测试使用--params补充配置文件中缺失的参数"""
+        config_data = {
+            "model_name": "test_model",
+            "model": {"input_dim": 10},  # 缺少 output_dim
+            "training_name": "test_training",
+            "training": {"learning_rate": 0.001},  # 缺少 batch_size
+        }
+        with open(self.test_config_path, "w") as f:
+            yaml.dump(config_data, f)
+        
+        # 使用--params补充缺失的参数
+        args = self.parser.parse_args([
+            "train", 
+            "--config", str(self.test_config_path),
+            "--params",
+            "output_dim=3",  # 补充缺失的参数
+            "batch_size=16"  # 补充缺失的参数
+        ])
+        
+        self.assertIsNotNone(args)
+        self.assertEqual(args.model.input_dim, 10)
+        self.assertEqual(args.model.output_dim, 3)
+        self.assertEqual(args.training.learning_rate, 0.001)
+        self.assertEqual(args.training.batch_size, 16)
+
 
 if __name__ == "__main__":
     unittest.main()

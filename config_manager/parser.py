@@ -161,44 +161,24 @@ class ConfigParser:
         if not isinstance(config, dict):
             raise ValueError("配置文件必须是一个字典")
 
-        configs = {}
-        # 遍历所有配置类型
-        for config_type, config_data in config.items():
-            if config_type.endswith("_name"):
-                # 获取基本配置类型（去掉_name后缀）
-                base_type = config_type[:-5]
-                if not isinstance(config_data, str):
-                    raise ValueError(f"{config_type}的值必须是字符串")
-                config_name = config_data
-                config_cls = ConfigRegistry.get_config(base_type, config_name)
-
-                if config_cls:
-                    # 获取对应的配置数据
-                    config_data = config.get(f"{base_type}", {})
-                    if not isinstance(config_data, dict):
-                        raise ValueError(f"{base_type}必须是一个字典")
-                    # 检查必需参数
-                    missing_params = []
-                    for param_name in ConfigRegistry._get_required_params(config_cls):
-                        if param_name not in config_data:
-                            missing_params.append(f"{config_type}.{param_name}")
-                    if missing_params:
-                        raise ValueError(
-                            f"{config_type}缺少必需参数: {', '.join(missing_params)}"
-                        )
-
-                    configs[base_type] = ConfigHelper.post_init(
-                        config_cls(**config_data)
-                    )
-
-                    # 检查配置对象是否有name属性，如果没有或者name为空则使用配置名称
-                    if (
-                        not hasattr(configs[base_type], "name")
-                        or not configs[base_type].name
-                    ):
-                        configs[base_type].name = config[config_type]
-
-        return CompositeConfig(**configs)
+        config_types = {}
+        config_params = {}
+        
+        # 提取配置类型和参数
+        for key, value in config.items():
+            if key.endswith("_name") and isinstance(value, str):
+                base_type = key[:-5]  # 去掉 _name 后缀
+                config_types[base_type] = value
+                # 获取对应的配置参数
+                if base_type in config and isinstance(config[base_type], dict):
+                    config_params[base_type] = config[base_type]
+                elif base_type not in config:
+                    config_params[base_type] = {}
+                else:
+                    raise ValueError(f"{base_type}必须是一个字典")
+        
+        # 使用通用方法创建配置对象
+        return ConfigParser.create_configs_from_params(config_types, config_params)
 
     def parse_args(self, args=None) -> CompositeConfig:
         """解析命令行参数并执行相应的操作。
@@ -250,65 +230,55 @@ class ConfigParser:
             try:
                 # 解析额外参数
                 params = self.parse_extra_params(args.params)
-
-                # 从配置文件或命令行参数创建配置
+                
+                # 收集配置类型和参数
+                config_types = {}
+                config_params = {}
+                
                 if args.config:
-                    # 先从配置文件加载配置
-                    configs = self.load_config(args.config)
-
-                    # 如果指定了额外参数，则修改相应的配置
-                    if params:
-                        # 获取所有配置类型
-                        config_types = {}
-                        for (
-                            config_type
-                        ) in ConfigRegistry.list_available_configs().keys():
-                            if hasattr(configs, config_type):
-                                config_obj = getattr(configs, config_type)
-                                if hasattr(config_obj, "name"):
-                                    config_types[config_type] = config_obj.name
-
-                        # 验证并分配参数
-                        assigned_params = ConfigRegistry.validate_and_assign_params(
-                            config_types, params, valid_missing=False
-                        )
-
-                        # 更新配置对象的属性
-                        for config_type, param_dict in assigned_params.items():
-                            if hasattr(configs, config_type):
-                                config_obj = getattr(configs, config_type)
-                                for param_name, param_value in param_dict.items():
-                                    if hasattr(config_obj, param_name):
-                                        setattr(config_obj, param_name, param_value)
-                                ConfigHelper.post_init(config_obj)
+                    # 从配置文件读取
+                    path = Path(args.config)
+                    if not path.exists():
+                        raise ValueError(f"配置文件不存在: {path}")
+                    
+                    # 加载配置文件
+                    config_data = ConfigHelper.load(dict, args.config)
+                    if not isinstance(config_data, dict):
+                        raise ValueError("配置文件必须是一个字典")
+                    
+                    # 提取配置类型和参数
+                    for key, value in config_data.items():
+                        if key.endswith("_name") and isinstance(value, str):
+                            base_type = key[:-5]  # 去掉 _name 后缀
+                            config_types[base_type] = value
+                            # 获取对应的配置参数
+                            if base_type in config_data and isinstance(config_data[base_type], dict):
+                                config_params[base_type] = config_data[base_type]
                 else:
-                    # 收集所有配置类型和名称
-                    config_types = {}
+                    # 从命令行参数收集配置类型
                     for config_type in ConfigRegistry.list_available_configs().keys():
                         name_arg = getattr(args, f"{config_type}_name")
                         if name_arg:
                             config_types[config_type] = name_arg
-
-                    # 验证并分配参数
-                    assigned_params = ConfigRegistry.validate_and_assign_params(
-                        config_types, params, valid_missing=True
-                    )
-
-                    # 创建配置对象
-                    configs = {}
-                    for config_type, name in config_types.items():
-                        config_cls = ConfigRegistry.get_config(config_type, name)
-                        if config_cls:
-                            configs[config_type] = ConfigHelper.post_init(
-                                config_cls(**assigned_params[config_type])
-                            )
-
-                    # 设置输出目录
-                    if "training" in configs and args.output_dir:
-                        configs["training"].output_dir = args.output_dir
-
-                    # 将配置字典转换为CompositeConfig对象
-                    configs = CompositeConfig(**configs)
+                
+                # 验证并分配额外参数
+                assigned_params = ConfigRegistry.validate_and_assign_params(
+                    config_types, params, valid_missing=not bool(args.config)
+                )
+                
+                # 合并参数：配置文件参数 + 额外参数
+                for config_type in config_types:
+                    if config_type not in config_params:
+                        config_params[config_type] = {}
+                    # 更新参数（额外参数会覆盖配置文件中的参数）
+                    config_params[config_type].update(assigned_params.get(config_type, {}))
+                
+                # 使用通用方法创建配置对象
+                configs = self.create_configs_from_params(config_types, config_params)
+                
+                # 设置输出目录（如果指定了）
+                if hasattr(configs, "training") and args.output_dir:
+                    configs.training.output_dir = args.output_dir
 
             except ValueError as e:
                 print(f"错误: {e}")
@@ -316,3 +286,49 @@ class ConfigParser:
 
         self.configs = configs
         return configs
+
+    @staticmethod
+    def create_configs_from_params(
+        config_types: Dict[str, str], 
+        config_params: Dict[str, Dict[str, Any]]
+    ) -> CompositeConfig:
+        """从配置类型和参数创建配置对象。
+
+        Args:
+            config_types: 配置类型和名称的映射，格式为 {config_type: config_name}
+            config_params: 配置参数的映射，格式为 {config_type: {param_name: param_value}}
+
+        Returns:
+            CompositeConfig: 创建的复合配置对象
+
+        Raises:
+            ValueError: 当配置类不存在或缺少必需参数时抛出
+        """
+        configs = {}
+        
+        for config_type, name in config_types.items():
+            config_cls = ConfigRegistry.get_config(config_type, name)
+            if config_cls:
+                # 获取该配置类型的参数
+                params = config_params.get(config_type, {})
+                
+                # 检查必需参数
+                missing_params = []
+                for param_name in ConfigRegistry._get_required_params(config_cls):
+                    if param_name not in params:
+                        missing_params.append(f"{config_type}.{param_name}")
+                if missing_params:
+                    raise ValueError(
+                        f"{config_type}缺少必需参数: {', '.join(missing_params)}"
+                    )
+                
+                # 创建配置对象
+                configs[config_type] = ConfigHelper.post_init(
+                    config_cls(**params)
+                )
+                
+                # 确保配置对象有正确的名称
+                if not hasattr(configs[config_type], "name") or not configs[config_type].name:
+                    configs[config_type].name = name
+        
+        return CompositeConfig(**configs)
