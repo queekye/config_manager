@@ -10,20 +10,43 @@
 - 支持配置组合，方便统一管理多个配置
 - 提供命令行参数解析功能，支持从命令行覆盖配置
 - 支持 JSON 和 YAML 格式配置文件的读写
-- 自动进行参数类型验证和转换
-- 支持配置参数的文档注释提取
+- 提供显式参数类型转换及注册/参数冲突检查
+- 支持从字段 metadata 提取配置参数说明
 
 ## 安装
 
 ```bash
 # 从源码安装
-git clone https://github.com/yourusername/config_manager.git
+git clone https://github.com/queekye/config_manager.git
 cd config_manager
 pip install -e .
 
 # 或者直接安装
-pip install config-manager
+pip install modern-config-manager
 ```
+
+安装发行包名是 `modern-config-manager`，导入名是 `config_manager`。
+当前源码安装使用 Python 3.8+ 和 PyYAML；已发布版本仍保留原版本号和标签。
+本项目是配置组件；`train` 子命令创建配置，不负责执行模型训练。
+
+```bash
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -e . pytest
+python -m pytest -q
+python examples/quickstart.py list
+python examples/quickstart.py train --config examples/config.yaml
+python examples/quickstart.py train --model_name mlp --training_name default --params 'hidden_dims=[64,32]' batch_size=4
+```
+
+包不会在 dataclass 构造时自动转换全部字段；需要显式调用
+`ConfigHelper.post_init()`，或使用执行此步骤的 `ConfigParser`。
+`list` 没有元素类型时按字符串处理；希望得到整数列表请用 `typing.List[int]`。
+API 参数说明来自 dataclass 字段 metadata 的 `help`，并非自动提取任意 docstring。
+配置文件和类型声明应来自可信项目；本库不是 JSON/YAML 安全沙箱或通用 schema 验证器。
+
+交接及后续边界见 [HANDOFF.md](HANDOFF.md)。
 
 ## 快速开始
 
@@ -31,7 +54,7 @@ pip install config-manager
 
 ```python
 from config_manager import ConfigRegistry
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # 定义配置类
 @ConfigRegistry.register("model", "mlp")
@@ -50,7 +73,7 @@ class MLPConfig:
     name: str = "mlp"
     input_dim: int = 10
     output_dim: int = 2
-    hidden_dims: list = [256, 128]
+    hidden_dims: list = field(default_factory=lambda: [256, 128])
     dropout_rate: float = 0.1
     activation: str = "relu"
     use_batch_norm: bool = True
@@ -75,7 +98,8 @@ print(params)
 
 ```python
 from config_manager import ConfigRegistry, ConfigHelper
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 @ConfigRegistry.register("training", "default")
 @dataclass
@@ -93,8 +117,8 @@ class TrainingConfig:
     batch_size: int = 32
     learning_rate: float = 0.001
     use_cuda: bool = True  # 字符串 "true", "yes", "1" 会自动转换为 True
-    layer_sizes: list = [512, 256]  # 字符串 "512,256" 会自动转换为 [512, 256]
-    optimizer_params: dict = {"lr": 0.001}  # 字符串 '{"lr": 0.001}' 会被正确解析
+    layer_sizes: List[int] = field(default_factory=lambda: [512, 256])  # 字符串 "512,256" 会自动转换为 [512, 256]
+    optimizer_params: dict = field(default_factory=lambda: {"lr": 0.001})  # 字符串 '{"lr": 0.001}' 会被正确解析
 
 # 创建配置并进行类型转换
 config = TrainingConfig(
@@ -156,7 +180,6 @@ model:
 training:
   batch_size: 128
   learning_rate: 0.001
-  epochs: 100
   output_dir: "./output"
 ```
 
@@ -165,28 +188,13 @@ training:
 支持通过命令行解析配置：
 
 ```python
+# 先注册项目配置类，再创建解析器。完整脚本见 examples/quickstart.py。
 from config_manager import ConfigParser
 
-# 初始化解析器
-parser = ConfigParser()
-
-# 解析命令行参数
-configs = parser.parse_args()
-
-# 如果是训练命令，获取配置
-if configs is None:
-    return
-
-if hasattr(configs, "model") and hasattr(configs, "training"):
-    # 获取模型和训练配置
-    model_config = configs.model
-    train_config = configs.training
-    
-    print(f"模型配置: {model_config}")
-    print(f"训练配置: {train_config}")
-    
-    # 这里可以根据配置构建模型和执行训练
-    # ...
+def main():
+    configs = ConfigParser().parse_args()
+    if configs is not None:
+        print(configs.to_dict())
 
 if __name__ == "__main__":
     main()
@@ -196,16 +204,16 @@ if __name__ == "__main__":
 
 ```bash
 # 列出所有可用配置
-python train.py list
+python examples/quickstart.py list
 
 # 查看特定配置的参数说明
-python train.py params --type model --name mlp
+python examples/quickstart.py params --type model --name mlp
 
 # 从配置文件加载并执行训练
-python train.py train --config config.yaml
+python examples/quickstart.py train --config examples/config.yaml
 
 # 从命令行参数创建配置并执行训练
-python train.py train --model_name mlp --training_name default --params "hidden_dims=[1024,512]" "batch_size=64"
+python examples/quickstart.py train --model_name mlp --training_name default --params "hidden_dims=[1024,512]" "batch_size=64"
 ```
 
 ## API 文档
@@ -256,7 +264,7 @@ python train.py train --model_name mlp --training_name default --params "hidden_
 
 ```python
 from config_manager import ConfigRegistry, ConfigParser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # 定义配置类
 @ConfigRegistry.register("model", "cnn")
